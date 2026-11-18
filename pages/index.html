@@ -11,7 +11,7 @@
 <body>
 <main class="wrap pro-wrap">
   <header class="hero pro-hero">
-    <span class="badge">v6.27 · 延迟优化：入口与测速参数调优</span>
+    <span class="badge">v6.28 · fork：新增「节点名加地区」（实测出口后回写节点名）</span>
     <h1>Usque MASQUE → Clash 小白版</h1>
 
     <a 
@@ -759,6 +759,46 @@
       </div>
     </details>
 
+    <!-- v6.28：节点名回写（写入实测出口国家）—— 独立可见区块 -->
+    <!--
+      ⚠ 为什么单独拎出来，而不是塞进上面的「高级：WARP 出口检测」区块：
+        那个区块在上游 v6.27 里被标了 legacy-hidden（CSS display:none!important，
+        且没有任何 JS 移除它）→ 默认状态下用户根本看不到。
+        本功能是独立的、跟「出口检测器」解耦的（脚本下载 → 检测 → 回写），
+        所以给它自己的可见入口 —— 不推翻上游「新手用简单模式」的产品决策。
+    -->
+    <details class="chain-box" id="rewriteNamesBox">
+      <summary>🏷️ 节点名加地区（可选，点击展开设置）</summary>
+      <p class="chain-note">
+        生成的节点名只有「标识 | 入口地址 | 端口」，<b>不含地区</b> —— 因为 WARP 的入口 IP 和最终出口不是一回事：
+        同一个入口在不同网络、不同时间下，最终出口国家可能不同，生成配置的那一刻根本无从知道。
+        填好下面的配置路径后下载检测脚本，它会<b>逐个实测每个节点的真实出口</b>，测完再把国家写回节点名，
+        例如 <code>🇺🇸 US | CDN | 162.159.198.2 | 443</code>。
+      </p>
+      <p class="chain-note">
+        <b>用法（四步）：</b>① 填下面要改写的 Clash 配置路径 → ② 生成并导入 Clash 配置到 Mihomo →
+        ③ 下载脚本并运行（脚本会实测出口并改写配置文件，原文件备份为 <code>.bak</code>）→
+        ④ <b>把改写后的配置重新导入一次</b>（Mihomo 不会自动重载你改过的文件，不重新导入看不到新名字）。
+      </p>
+      <div class="settings-grid">
+        <label><span>要改写的 Clash 配置</span><input id="egressRewriteConfig" placeholder="如 D:\clash\masque-clash-smart.yaml"></label>
+        <label><span>国家前缀格式</span><select id="egressRewriteFormat">
+          <option value="flag">🇺🇸 US（国旗 + 国家码）</option>
+          <option value="name">🇺🇸 美国（国旗 + 中文名）</option>
+          <option value="code">US（仅国家码）</option>
+        </select></label>
+        <label><span>Mihomo 控制地址</span><input id="egressRewriteController" placeholder="如 http://127.0.0.1:9090"></label>
+        <label><span>本地代理地址</span><input id="egressRewriteProxy" placeholder="如 http://127.0.0.1:7890"></label>
+      </div>
+      <p class="chain-note">
+        未探测到出口的节点<b>保持原样</b>（不瞎标国家）；检测只读不改你的代理选择（脚本不会动任何策略组）。
+      </p>
+      <div class="row" style="margin-top:10px">
+        <button id="downloadRewriteScanner" class="primary" type="button">⬇ 下载检测脚本（带回写）</button>
+        <button id="downloadRewriteBat" type="button">⬇ 下载 Windows 一键脚本</button>
+      </div>
+    </details>
+
     <p id="poolStatus" class="pool-status">端点池：内置（正在尝试读取远程清单…）</p>
 
     <div id="nodeEstimate" class="estimate">预计生成：13 个节点</div>
@@ -897,6 +937,6 @@
 
 <script src="./qrcode.js?v=621"></script>
 <script src="./usque-register.js?v=621"></script>
-<script src="./app.js?v=627"></script>
+<script src="./app.js?v=628"></script>
 </body>
 </html>

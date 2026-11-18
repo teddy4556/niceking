@@ -59,6 +59,60 @@ const CLASH_IP_RULESETS=[
 ["ad_ip","https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/ad.mrs"]
 ];
 
+// v6.28：生成「检测 + 回写节点名」的一键脚本。
+//
+// ⚠ 与 buildEgressBat() 的三点区别（都是刻意的）：
+//   1. **必带** --rewrite-config —— 这个脚本的目的就是回写，不是可选。
+//   2. **不带** --apply / --apply-all —— 只检测、只改配置文件里的名字，
+//      **不碰用户的代理选择**。原脚本会顺手把最佳节点切到「地区优选 / PROXY / AI」，
+//      那属于「用户没要求的行为变更」，回写场景不该顺手做。
+//   3. 独立读自己的输入框（不共用出口检测区块的）——
+//      那个区块在上游 v6.27 里是 legacy-hidden（默认隐藏），共用等于取不到值。
+function buildRewriteBat(){
+ const path=String($("egressRewriteConfig")?.value||"").trim();
+ const fmt=String($("egressRewriteFormat")?.value||"flag");
+ const ctl=String($("egressRewriteController")?.value||"").trim()||"http://127.0.0.1:9090";
+ const proxy=String($("egressRewriteProxy")?.value||"").trim()||"http://127.0.0.1:7890";
+ if(!path)return "";
+ return `@echo off
+chcp 65001 >nul
+title Usque WARP Egress + Node Name Rewrite
+echo ==========================================
+echo   WARP 出口检测 + 节点名回写（写入实测出口国家）
+echo ==========================================
+echo.
+echo 配置: ${path}
+echo.
+where python >nul 2>nul
+if errorlevel 1 (
+  echo [错误] 没有找到 Python。
+  echo 请先安装 Python 3，并勾选 Add Python to PATH。
+  pause
+  exit /b 1
+)
+if not exist "warp-egress-selector.py" (
+  echo [错误] 当前目录找不到 warp-egress-selector.py
+  echo 请把两个文件放在同一个目录里再运行。
+  pause
+  exit /b 1
+)
+if not exist "${path}" (
+  echo [错误] 找不到要改写的配置文件：${path}
+  echo 请检查上面填的路径是否正确（要填完整的 .yaml 文件路径）。
+  pause
+  exit /b 1
+)
+echo Controller: ${ctl}
+echo Local Proxy: ${proxy}
+echo.
+python "warp-egress-selector.py" --controller "${ctl}" --proxy "${proxy}" --no-apply --rewrite-config "${path.replace(/"/g,'""')}" --rewrite-format "${fmt}"
+echo.
+echo 完成后请把改写后的配置**重新导入一次** Clash/Mihomo —— 它不会自动重载你改过的文件。
+echo 原文件已备份为 .bak。
+pause
+`;
+}
+
 function download(name,text,type="text/plain"){
  try{
   const b=new Blob([text],{type:type+";charset=utf-8"}),u=URL.createObjectURL(b),a=document.createElement("a");
@@ -484,6 +538,14 @@ function buildEgressBat(){
  const preferArg=countries?` --prefer "${countries}"`:"";
  const chatArg=cfg.chatgpt_first?" --chatgpt-first":"";
  const allArg=cfg.apply_all?" --apply-all":"";
+ // v6.28：检测后回写节点名（写入实测出口国家）
+ const rewritePath=String($("egressRewriteConfig")?.value||"").trim();
+ const rewriteOn=!!$("egressRewriteNames")?.checked&&rewritePath;
+ const rewriteFmt=String($("egressRewriteFormat")?.value||"flag");
+ const rewriteArg=rewriteOn?` --rewrite-config "${rewritePath.replace(/"/g,'""')}" --rewrite-format "${rewriteFmt}"`:"";
+ const rewriteNote=rewriteOn
+   ? `echo.\necho 检测完成后会把出口国家写回配置文件的节点名（原文件备份为 .bak）：\necho   ${rewritePath}\n`
+   : `echo.\necho 检测完成后会在当前目录生成 JSON 和 CSV 报告。\n`;
  return `@echo off
 chcp 65001 >nul
 title Usque WARP Egress Selector v6.5
@@ -507,10 +569,8 @@ echo Controller: ${cfg.controller}
 echo Local Proxy: ${cfg.proxy}
 echo Preferred: ${countries||"ANY"}
 echo.
-python "warp-egress-selector.py" --controller "${cfg.controller}" --proxy "${cfg.proxy}"${secretArg}${preferArg}${chatArg}${allArg}
-echo.
-echo 检测完成后会在当前目录生成 JSON 和 CSV 报告。
-pause
+python "warp-egress-selector.py" --controller "${cfg.controller}" --proxy "${cfg.proxy}"${secretArg}${preferArg}${chatArg}${allArg}${rewriteArg}
+${rewriteNote}pause
 `;
 }
 
@@ -1416,16 +1476,25 @@ $("fmtClash").addEventListener("click",()=>{try{setFormat("clash");toast(`Clash 
 $("fmtShadowrocket").addEventListener("click",()=>{try{setFormat("shadowrocket");toast(`Shadowrocket 配置已生成，共 ${connectionPairs().length} 个节点。`,"success","格式已生成")}catch(e){toast(e.message,"error","生成失败")}});
 $("fmtSingbox").addEventListener("click",()=>{try{setFormat("singbox");toast("sing-box 兼容配置已生成。","success","格式已生成")}catch(e){toast(e.message,"error","生成失败")}});
 $("fmtVless").addEventListener("click",()=>{try{setFormat("vless");toast("VLESS 本地桥接配置已生成。","success","格式已生成")}catch(e){toast(e.message,"error","生成失败")}});
-const PANEL_VERSION="6.27";
+// v6.28：fork 新增「节点名加地区」。
+const PANEL_VERSION="6.28";
 function versionNewer(a,b){
  const pa=String(a).replace(/^v/i,"").split(".").map(n=>parseInt(n,10)||0);
  const pb=String(b).replace(/^v/i,"").split(".").map(n=>parseInt(n,10)||0);
  for(let i=0;i<Math.max(pa.length,pb.length);i++){const x=pa[i]||0,y=pb[i]||0;if(x>y)return true;if(x<y)return false;}
  return false;
 }
+// ⚠ v6.28（fork）：版本检查指向**本 fork 仓库**，不是上游。
+//   原来指向 KJGX66F/usque-custom-pro —— 对 fork 用户来说，
+//   上游的版本号跟自己的面板对不上（自己的改动永远不显示「有更新」，
+//   反过来上游发版却会提示「该更新了」，但更新的是没有新功能的版本）。
+//   判据：**「本面板的版本」必须跟「本面板所在仓库的 release」比**。
+//   ⚠ 端点池远程清单（endpoints.json）仍指向上游 —— 那份资源由上游维护，
+//     跟着上游走是对的，不要一起改。
+const PANEL_REPO="teddy4556/niceking";
 async function checkPanelUpdate(){
  try{
-  const res=await fetch("https://api.github.com/repos/KJGX66F/usque-custom-pro/releases/latest",{headers:{Accept:"application/vnd.github+json"}});
+  const res=await fetch(`https://api.github.com/repos/${PANEL_REPO}/releases/latest`,{headers:{Accept:"application/vnd.github+json"}});
   if(!res.ok)return;
   const d=await res.json();
   const tag=String(d.tag_name||"");
@@ -1434,7 +1503,7 @@ async function checkPanelUpdate(){
   if(dismissed===tag)return;
   const banner=$("updateBanner");if(!banner)return;
   $("updateBannerText").textContent=`🎉 面板有新版本 ${tag}（你正在用 v${PANEL_VERSION}），建议更新：`;
-  $("updateBannerLink").href=d.html_url||"https://github.com/KJGX66F/usque-custom-pro/releases";
+  $("updateBannerLink").href=d.html_url||`https://github.com/${PANEL_REPO}/releases`;
   banner.dataset.tag=tag;
   banner.classList.remove("hidden");
  }catch{}
@@ -1801,7 +1870,9 @@ $("downloadHelper").addEventListener("click",()=>{if(currentFormat==="vless"&&he
 $("downloadVlessBat").addEventListener("click",()=>{if(currentFormat==="vless")download("start-usque-vless-windows.bat",buildVlessWindowsBat(),"text/plain")});
 
 $("downloadEgressScanner").addEventListener("click",()=>{
-  window.location.href="./warp-egress-selector.py?v=65";
+  // ⚠ v6.28：版本号从 v=65 提到 v=628 —— 下载的是同一个文件，
+  //   但缓存键变了才能拿到新内容（脚本新增了回写功能）。
+  window.location.href="./warp-egress-selector.py?v=628";
   toast("出口检测脚本下载已触发。","success","下载已触发");
 });
 $("downloadEgressBat").addEventListener("click",()=>{
@@ -1809,6 +1880,21 @@ $("downloadEgressBat").addEventListener("click",()=>{
 });
 $("downloadEgressConfig").addEventListener("click",()=>{
   download("warp-egress-preference.json",JSON.stringify(egressPreferences(),null,2),"application/json");
+});
+
+// v6.28：节点名回写（可见区块里的两个下载按钮）
+$("downloadRewriteScanner").addEventListener("click",()=>{
+  window.location.href="./warp-egress-selector.py?v=628";
+  toast("检测脚本下载已触发（带回写功能）。","success","下载已触发");
+});
+$("downloadRewriteBat").addEventListener("click",()=>{
+  // ⚠ 路径没填就不生成 —— 生成一个空脚本，用户跑到一半才发现没配置路径。
+  const path=String($("egressRewriteConfig")?.value||"").trim();
+  if(!path){
+    toast("请先填写「要改写的 Clash 配置」的完整路径。","error","缺少配置路径");
+    return;
+  }
+  download("run-warp-egress-rewrite.bat",buildRewriteBat(),"text/plain");
 });
 
 resetRecommended();syncConditional();loadRemotePool();renderAccounts();checkPanelUpdate();updateEstimate();updateFreeEgressHint();updateCustomIpRoutingHint();setSettingsState("clean","当前设置已应用");
